@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Live Camera Stream (cam4)</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            background-color: #222;
+            color: #eee;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+        }
+        #video-stream {
+            border: 2px solid #00ff00;
+            background-color: #000;
+            min-width: 640px;
+            min-height: 480px;
+        }
+        #status {
+            margin-top: 15px;
+            font-size: 1.2em;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Live Stream from cam4</h1>
+    <img id="video-stream" src="" alt="Live stream will appear here...">
+    <div id="status">Connecting...</div>
+
+    <script>
+        const imgElement = document.getElementById('video-stream');
+        const statusElement = document.getElementById('status');
+        const camera_id = 'cam4';
+        const ws_url = `ws://localhost:5001/ws/stream/${camera_id}`;
+
+        let currentObjectUrl = null;
+
+        function connect() {
+            const socket = new WebSocket(ws_url);
+            
+            socket.onopen = function(event) {
+                console.log("WebSocket connection established.");
+                statusElement.textContent = "✅ Connected";
+                statusElement.style.color = "#00ff00";
+            };
+
+            // این بخش مهم‌ترین قسمت است
+            socket.onmessage = function(event) {
+                // event.data یک Blob حاوی بایت‌های تصویر JPEG است
+                // برای نمایش آن در تگ <img>، یک URL موقت برای آن ایجاد می‌کنیم
+                
+                // URL قبلی را آزاد می‌کنیم تا از نشت حافظه جلوگیری شود
+                if (currentObjectUrl) {
+                    URL.revokeObjectURL(currentObjectUrl);
+                }
+
+                currentObjectUrl = URL.createObjectURL(event.data);
+                imgElement.src = currentObjectUrl;
+            };
+
+            socket.onclose = function(event) {
+                console.log("WebSocket connection closed. Reconnecting in 3 seconds...");
+                statusElement.textContent = "🔁 Reconnecting...";
+                statusElement.style.color = "#ffaa00";
+                setTimeout(connect, 3000); // تلاش برای اتصال مجدد پس از ۳ ثانیه
+            };
+
+            socket.onerror = function(error) {
+                console.error("WebSocket Error: ", error);
+                statusElement.textContent = "❌ Connection Error";
+                statusElement.style.color = "#ff4444";
+                socket.close();
+            };
+        }
+
+        // شروع اتصال
+        connect();
+    </script>
+
+</body>
+</html>

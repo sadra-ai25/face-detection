@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Outputs & Databases
+outputs/
+*.db
+*.sqlite
+
+# Large files & Archives
+*.tar
+*.zip
+face.tar
+redis.tar
+
+# Samples (Videos)
+sample/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+.DS_Store
