@@ -1,26 +1,28 @@
 # Face Detection & Recognition System
 
-![Python](https://img.shields.io/badge/Python-3.10-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-green) ![InsightFace](https://img.shields.io/badge/InsightFace-buffalo__l-orange) ![Docker](https://img.shields.io/badge/Docker-Compose-blue) ![Redis](https://img.shields.io/badge/Redis-Cache-red)
+![Python](https://img.shields.io/badge/Python-3.10-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-green) ![InsightFace](https://img.shields.io/badge/InsightFace-buffalo__l-orange) ![BoxMOT](https://img.shields.io/badge/BoxMOT-ByteTrack-blue) ![Docker](https://img.shields.io/badge/Docker-Compose-blue) ![Redis](https://img.shields.io/badge/Redis-Cache-red)
 
 Multi-camera real-time face detection and recognition system for access monitoring. Detects faces from RTSP streams, matches them against a registered face database, and logs recognition events to SQL Server.
 
 ## Features
 
 - **Multi-camera RTSP** — simultaneous face monitoring from multiple IP cameras
-- **InsightFace recognition** — buffalo_l ONNX model pipeline for high-accuracy face recognition
-- **Face database** — register and manage faces via API; database stored as pickle for fast lookup
-- **Cosine similarity matching** — configurable threshold for identity matching
-- **Unknown face handling** — faces below threshold are flagged as unknown
+- **InsightFace recognition** — buffalo_l ONNX pipeline; 512-dim ArcFace embeddings with L2 normalization
+- **BoxMOT tracker** — ByteTrack algorithm assigns stable track IDs across frames, reducing redundant recognition calls
+- **Face database** — register and manage faces via API; `face_db.pkl` for fast in-memory lookup
+- **Configurable similarity metric** — cosine or euclidean distance; recent-labels deque + confirmation counter for robust labeling
+- **Unknown face handling** — faces below similarity threshold are flagged as unknown
+- **WebSocket live streaming** — `/ws/stream/{camera_id}` pushes annotated frames in real time
 - **SQL Server sync** — recognition events (person, camera, timestamp, confidence) logged to database
-- **Data augmentation** — `augment.py` utility for improving face registration quality
-- **REST API** — register new faces, trigger recognition, query logs
+- **Data augmentation** — `augment.py` for improving face registration quality
 
 ## Tech Stack
 
 | Component | Technology |
 |---|---|
 | Face Detection | InsightFace (buffalo_l) — ONNX |
-| Face Recognition | ArcFace embedding via InsightFace |
+| Face Recognition | ArcFace 512-dim embedding + L2 normalization |
+| Object Tracker | BoxMOT (ByteTrack) |
 | API Server | FastAPI + Uvicorn |
 | Frame Queue | Redis |
 | Database | Microsoft SQL Server (pyodbc) |
@@ -39,8 +41,10 @@ IP Cameras (RTSP)
       ▼
  Frame Consumer (Thread per camera)
    - Detects all faces in frame (buffalo_l)
-   - Extracts 512-dim embedding per face
-   - Compares against face database (cosine similarity)
+   - BoxMOT ByteTrack → stable track IDs
+   - Extracts 512-dim ArcFace embedding (L2 normalized)
+   - Compares against face_db.pkl (cosine/euclidean)
+   - Recent-labels deque + confirmation counter → stable label
    - Labels: known person or "Unknown"
       │
       ├──▶  SQL Server  (recognition log)
@@ -86,40 +90,42 @@ docker compose up -d --build
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/health` | Service health check |
-| `POST` | `/register` | Register a new face (upload image + person name) |
-| `DELETE` | `/unregister/{name}` | Remove a person from the face database |
-| `GET` | `/persons` | List all registered persons |
-| `POST` | `/recognize` | Run recognition on an uploaded image |
-| `GET` | `/logs` | Query recent recognition events |
+| `POST` | `/image` | Run face recognition on a single uploaded image |
+| `POST` | `/video` | Upload a video file for batch face recognition |
+| `POST` | `/rtsp/start` | Start RTSP stream processing |
+| `POST` | `/rtsp/stop` | Stop RTSP stream processing |
+| `POST` | `/personnel/upload` | Register a person (base64 images + ID + name) |
+| `DELETE` | `/personnel/delete/{personnel_id}` | Remove a person from the face database |
+| `WS` | `/ws/stream/{camera_id}` | WebSocket for live annotated frame stream |
 
-### Example: Register a Face
+### Example: Register a Person
 
 ```bash
-curl -X POST http://localhost/register \
-  -F "name=John Doe" \
-  -F "file=@/path/to/photo.jpg"
+curl -X POST http://localhost:8000/personnel/upload \
+  -H "Content-Type: application/json" \
+  -d '{
+    "personnel_id": "EMP001",
+    "first_name": "Ali",
+    "last_name": "Rezaei",
+    "images": ["<base64_image_1>", "<base64_image_2>"]
+  }'
 ```
 
 ### Example: Recognize from Image
 
 ```bash
-curl -X POST http://localhost/recognize \
+curl -X POST http://localhost:8000/image \
   -F "file=@/path/to/frame.jpg"
 ```
 
-**Response:**
+### Example: Live Stream via WebSocket
 
-```json
-{
-  "detections": [
-    {
-      "person": "John Doe",
-      "confidence": 0.93,
-      "bbox": [120, 80, 280, 300]
-    }
-  ]
-}
+```javascript
+const ws = new WebSocket("ws://localhost:8000/ws/stream/cam1");
+ws.onmessage = (event) => {
+  const blob = new Blob([event.data], { type: "image/jpeg" });
+  // render annotated frame
+};
 ```
 
 ## Face Database Management
